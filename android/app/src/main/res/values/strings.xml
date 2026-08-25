@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Luxorides</string>
+    <string name="title_activity_main">Luxorides</string>
+    <string name="package_name">com.luxorides.app</string>
+    <string name="custom_url_scheme">com.luxorides.app</string>
+</resources>

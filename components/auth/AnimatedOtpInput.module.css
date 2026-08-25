@@ -1,0 +1,130 @@
+/*
+ * Decorative-only effects that don't map to Tailwind utilities: the spinning
+ * conic-gradient border that morphs into the success color, and the radial glow
+ * behind the row once verified. All box merge/scatter motion and the checkmark
+ * are driven by motion/react variants in AnimatedOtpInput.tsx, not here.
+ *
+ * Recolored copy of the driver app's AnimatedOtpInput.module.css -- same template,
+ * this app's tokens (--lux-gold, --lux-line) plus two locally-scoped success/danger
+ * colors since globals.css doesn't define those (kept local rather than touching the
+ * shared theme file).
+ */
+
+.row {
+  --otp-success: #34d399;
+  --otp-danger: #f87171;
+
+  position: relative;
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: center;
+}
+
+.row::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 160%;
+  height: 260%;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.18) 0%, rgba(0, 0, 0, 0) 60%);
+  opacity: 0;
+  transition: opacity 1s ease-in-out 1.3s;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.rowComplete::before {
+  opacity: 1;
+}
+
+.box {
+  position: relative;
+  width: 52px;
+  height: 60px;
+  border-radius: 14px;
+  background: #171719;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.box:focus-within {
+  background: color-mix(in srgb, var(--lux-gold) 22%, #171719);
+}
+
+.box::before {
+  content: "";
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 300%;
+  height: 300%;
+  background: transparent;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+}
+
+.rowComplete .box::before {
+  opacity: 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 55%,
+    color-mix(in srgb, var(--lux-gold) 15%, transparent) 70%,
+    var(--lux-gold) 92%,
+    color-mix(in srgb, var(--lux-gold) 60%, white) 100%
+  );
+  animation:
+    rotateGradient 1s linear 1 forwards,
+    morphToSuccess 0.9s ease-in-out 1s forwards;
+}
+
+@keyframes rotateGradient {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes morphToSuccess {
+  0%,
+  32% {
+    background: conic-gradient(from 0deg, var(--lux-gold) 0%, color-mix(in srgb, var(--lux-gold) 60%, white) 50%, var(--lux-gold) 100%);
+  }
+  33%,
+  100% {
+    background: conic-gradient(from 0deg, var(--otp-success) 0%, color-mix(in srgb, var(--otp-success) 70%, black) 50%, var(--otp-success) 100%);
+  }
+}
+
+.input {
+  position: absolute;
+  inset: 2.5px;
+  width: calc(100% - 5px);
+  height: calc(100% - 5px);
+  background: #0d0d0e;
+  border: none;
+  border-radius: 11px;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  z-index: 1;
+}
+
+.rowError .input {
+  color: var(--otp-danger);
+}
+
+.tick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  z-index: 10;
+  pointer-events: none;
+}
