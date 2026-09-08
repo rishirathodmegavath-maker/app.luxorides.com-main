@@ -7,6 +7,15 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
+# Required -- NEXT_PUBLIC_ variables are inlined into the JS bundle at build
+# time, so the real backend URL must be supplied here, e.g.:
+#   docker build --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.example.com .
+# The build fails intentionally (see services/config.ts) if this is left
+# unset, rather than silently shipping an image that targets localhost.
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+
 RUN npm run build
 
 # ---------- Runtime Stage ----------

@@ -1,6 +1,41 @@
+const DEV_DEFAULT_BASE_URL = "http://localhost:8443";
+
+// P0 -- the backend base URL used to be hardcoded to localhost:8443 here,
+// which meant every production build (server-side API/file proxy routes AND
+// the client-side WebSocket/trip-share code below, which all import BASE_URL
+// from this single module) silently targeted a developer's own machine
+// unless someone remembered to hand-edit this file before deploying. Now
+// driven entirely by NEXT_PUBLIC_API_BASE_URL: real value in prod, the old
+// localhost default preserved for local development (still explicit, never
+// silent), and a loud failure -- not an accidental localhost fallback -- if
+// production is ever built/run without it configured.
+//
+// NEXT_PUBLIC_ (not a server-only var) is required because BASE_URL is read
+// from browser code too (useBookingRealtime/useDutyLocationRealtime open a
+// WebSocket directly from the client, and the public trip-share page fetches
+// the backend directly) -- Next.js only inlines NEXT_PUBLIC_-prefixed vars
+// into the client bundle. This is genuinely public configuration (a
+// customer-facing API's own hostname, not a secret), so exposing it to the
+// browser is safe and unavoidable for those call sites.
+function resolveBaseUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_API_BASE_URL is not set. Refusing to start in production " +
+        "without an explicitly configured backend URL (see .env.example)."
+    );
+  }
+
+  return DEV_DEFAULT_BASE_URL;
+}
+
 export const CONFIG = {
-  BASE_URL: "http://localhost:8443",
-  // BASE_URL: "https://beta.fleetovo.com",
+  BASE_URL: resolveBaseUrl(),
   // demo is live on vercel and luxorides is live on VPS
   ORG_ID: "demo",
   GOOGLE_MAPS_KEY:"AIzaSyB05ul7W1kSDwX-8Magxd2B2zkx4MRthCs",
@@ -8,7 +43,8 @@ export const CONFIG = {
 };
 
 // Derived from BASE_URL so the two can never drift out of sync when
-// switching between local/beta -- http(s) -> ws(s), same host.
+// switching environments -- http(s) -> ws(s), same host. https:// correctly
+// becomes wss:// (only the "http" prefix is replaced, leaving the "s").
 export const WS_BASE_URL = CONFIG.BASE_URL.replace(/^http/, "ws");
 
 
