@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LuxoRides Customer App
 
-## Getting Started
+The customer-facing booking web app for LuxoRides -- browse vehicles, book a chauffeur-driven duty, track a driver live, pay, and manage bookings. Built with Next.js (App Router), and also wrapped with Capacitor for an Android/iOS shell.
 
-First, run the development server:
+## Requirements
+
+- Node.js 20+
+- The [Fleetovo backend](../fleetovo-core-service-main) running and reachable
+
+## Local development
+
+Copy `.env.example` to `.env.local` and fill in real values (see the comments in that file for what each one does and its fallback behavior):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+At minimum for local development against a backend running on `localhost:8443`, `.env.local` can be left empty -- `NEXT_PUBLIC_API_BASE_URL` defaults to `http://localhost:8443` in dev, and `NEXT_PUBLIC_GOOGLE_MAPS_KEY` falls back to a shared key with a console warning. Set both explicitly for anything beyond local development; production builds refuse to start without `NEXT_PUBLIC_API_BASE_URL` set.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Learn More
+## Build
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+npm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`NEXT_PUBLIC_*` variables are baked into the bundle at **build** time, not read at server runtime -- set them before `npm run build`, not just before `npm start`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tests and lint
 
-## Deploy on Vercel
+```bash
+npm test
+npm run lint
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Mobile shell (Capacitor)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run cap:sync
+npm run cap:open:android
+npm run cap:open:ios
+```
+
+Builds the same Next.js app into a native Android/iOS shell via Capacitor. Requires Android Studio / Xcode respectively.
