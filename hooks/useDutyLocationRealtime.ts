@@ -11,6 +11,19 @@ const AUTH_REJECT_STREAK_THRESHOLD = 3;
 const REST_FALLBACK_AFTER_FAILURES = 5;
 const REST_FALLBACK_POLL_MS = 20000;
 
+// A REST fallback response can resolve after a newer WS push landed (e.g. a
+// poll fired just before the socket reconnected) -- comparing capturedAt
+// stops that stale response from regressing the map to an older position.
+// Missing timestamps on either side fall through to "apply", matching the
+// pre-existing behavior.
+function isNewerFix(
+  incoming: DriverDutyLocationResponse,
+  current: DriverDutyLocationResponse | null
+): boolean {
+  if (!current || !incoming.capturedAt || !current.capturedAt) return true;
+  return new Date(incoming.capturedAt).getTime() >= new Date(current.capturedAt).getTime();
+}
+
 // Live driver position for the booking-detail map. Unlike useBookingRealtime
 // (a bare signal that triggers a REST refetch), this channel pushes the real
 // coordinate payload directly -- see DutyLocationChannelRegistry's class
@@ -52,7 +65,7 @@ export function useDutyLocationRealtime(
       fallbackTimer = setInterval(() => {
         ClientBookingService.getDutyLocation(dutyId)
           .then((loc) => {
-            if (loc) setLocation(loc);
+            if (loc) setLocation((prev) => (isNewerFix(loc, prev) ? loc : prev));
           })
           .catch(() => {
             // Best-effort -- keep the last known position on screen.
@@ -78,7 +91,7 @@ export function useDutyLocationRealtime(
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as DriverDutyLocationResponse;
-          setLocation(payload);
+          setLocation((prev) => (isNewerFix(payload, prev) ? payload : prev));
         } catch {
           // Ignore a malformed push -- keep the last known position.
         }
