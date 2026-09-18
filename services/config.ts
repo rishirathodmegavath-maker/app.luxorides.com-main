@@ -34,11 +34,40 @@ function resolveBaseUrl(): string {
   return DEV_DEFAULT_BASE_URL;
 }
 
+// P1.12 -- this key used to be hardcoded here directly (same fixed value
+// also hardcoded in the fleetovo-app-main ops app), committed to source
+// with no way to rotate or restrict it per-deployment. A Google Maps JS key
+// is browser-exposed by design either way (Google's actual protection for
+// this key is HTTP-referrer + API restriction in Cloud Console, not
+// secrecy), so this isn't a leaked-secret fix -- it's a configuration-
+// management one: the key can now be swapped per environment without a
+// code change, and can be found/rotated in one place instead of two
+// hardcoded copies. Falls back to the existing key (not a hard production
+// failure like BASE_URL above) so a missing env var degrades to today's
+// working behavior -- never silently breaking the one feature that key
+// backs -- while still surfacing the gap loudly enough to fix.
+function resolveGoogleMapsKey(): string {
+  const configured = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const fallback = "AIzaSyB05ul7W1kSDwX-8Magxd2B2zkx4MRthCs";
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "NEXT_PUBLIC_GOOGLE_MAPS_KEY is not set -- falling back to the " +
+        "previously-hardcoded key (see .env.example). Set it explicitly so " +
+        "this deployment isn't silently sharing a key with other apps."
+    );
+  }
+  return fallback;
+}
+
 export const CONFIG = {
   BASE_URL: resolveBaseUrl(),
   // demo is live on vercel and luxorides is live on VPS
   ORG_ID: "demo",
-  GOOGLE_MAPS_KEY:"AIzaSyB05ul7W1kSDwX-8Magxd2B2zkx4MRthCs",
+  GOOGLE_MAPS_KEY: resolveGoogleMapsKey(),
   CART_STORAGE_KEY:"luxorides_cart_v1"
 };
 
