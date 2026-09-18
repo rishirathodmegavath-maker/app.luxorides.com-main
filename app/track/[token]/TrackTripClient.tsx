@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Car, Gauge, MapPin, Timer, TriangleAlert, UserRound } from "lucide-react";
+import { Car, CheckCircle2, Gauge, MapPin, Timer, TriangleAlert, UserRound } from "lucide-react";
 
 import { CONFIG } from "@/services/config";
 import { loadGoogleMaps } from "@/lib/google-maps";
@@ -12,12 +12,25 @@ import { instantToReadable } from "@/lib/date";
 import LoadingState from "@/components/ui/LoadingState";
 
 const POLL_MS = 10000;
+// Same exponential-backoff shape already used by the authenticated realtime
+// hooks' REST fallback (useBookingRealtime.ts / useDutyLocationRealtime.ts)
+// -- reused here for consistency rather than inventing a separate schedule.
+// Only engages on repeated fetch failures; a healthy poll always resets
+// straight back to POLL_MS, so live-trip freshness is unchanged from today.
+const MAX_BACKOFF_MS = 30000;
 
 // Standalone, unauthenticated trip-tracking page reached via a shared link
 // (see "Share trip" on BookingDetailView). Deliberately has no app shell/nav
 // -- it must work for anyone with the link, logged in or not. Polls the
 // public REST endpoint directly rather than opening a WS channel, since this
 // is a single throwaway view rather than a long-lived authenticated screen.
+//
+// Phase A: previously polled unconditionally every 10s for as long as the
+// tab stayed open, even backgrounded, even after the trip finished. Now:
+// paused while the tab is hidden (resumes with an immediate refresh, not a
+// stale wait, when it becomes visible again), stopped for good once the
+// duty reaches COMPLETED (nothing left to ever change), and backs off
+// exponentially on repeated fetch failures instead of hammering every 10s.
 export default function TrackTripClient({ token }: { token: string }) {
   const [status, setStatus] = useState<PublicTripStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,6 +42,22 @@ export default function TrackTripClient({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let failureStreak = 0;
+    let finished = false;
+
+    const clearTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const schedule = (delayMs: number) => {
+      clearTimer();
+      if (cancelled || finished || document.visibilityState === "hidden") return;
+      timer = setTimeout(refresh, delayMs);
+    };
 
     const refresh = async () => {
       try {
@@ -36,27 +65,53 @@ export default function TrackTripClient({ token }: { token: string }) {
 
         if (!res.ok) {
           if (!cancelled) setInvalid(true);
+          failureStreak += 1;
+          schedule(Math.min(POLL_MS * 2 ** failureStreak, MAX_BACKOFF_MS));
           return;
         }
 
         const data = (await res.json()) as PublicTripStatusResponse;
+        failureStreak = 0;
         if (!cancelled) {
           setStatus(data);
           setInvalid(false);
         }
+
+        if (data.dutyStatus === DutyStatus.COMPLETED) {
+          // Trip is over -- nothing will ever change again for this token,
+          // so there's nothing left worth polling for.
+          finished = true;
+          clearTimer();
+          return;
+        }
+
+        schedule(POLL_MS);
       } catch {
         if (!cancelled) setInvalid(true);
+        failureStreak += 1;
+        schedule(Math.min(POLL_MS * 2 ** failureStreak, MAX_BACKOFF_MS));
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && !finished) {
+        // Coming back into view: refresh immediately rather than waiting
+        // out whatever was left of the last scheduled delay.
+        refresh();
+      } else {
+        clearTimer();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
     refresh();
-    const timer = setInterval(refresh, POLL_MS);
 
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimer();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [token]);
 
@@ -160,6 +215,13 @@ export default function TrackTripClient({ token }: { token: string }) {
               }
             />
           </div>
+
+          {status.dutyStatus === DutyStatus.RUNNING && status.arrivedAtPickupAt && (
+            <div className="flex items-center gap-2 rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-300">
+              <CheckCircle2 size={16} className="shrink-0" />
+              <span>Your driver has arrived at the pickup point</span>
+            </div>
+          )}
 
           {status.dutyStatus === DutyStatus.RUNNING && hasPosition && (
             <div className="overflow-hidden rounded-2xl border border-[#d8b25c]/20">

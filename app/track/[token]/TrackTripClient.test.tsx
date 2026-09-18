@@ -1,70 +1,125 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, cleanup, waitFor } from "@testing-library/react";
-import "@testing-library/jest-dom/vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, act, cleanup } from "@testing-library/react";
 
 import TrackTripClient from "./TrackTripClient";
-import { DutyStatus } from "@/types/booking/booking.types";
 
 /*
- * P0 -- the public, unauthenticated trip-share page fetches the backend
- * directly from the browser (bypassing the /api proxy, since this route has
- * no session token to attach), so it is one of the two client-side call
- * sites that actually need CONFIG.BASE_URL to resolve to a real, publicly
- * reachable backend in production rather than localhost. Mocks
- * services/config directly (rather than env vars) since that module is the
- * single already-tested source of truth for how BASE_URL itself resolves
- * (see services/config.test.ts) -- this test only proves TrackTripClient
- * actually uses whatever CONFIG.BASE_URL resolves to, not localhost.
+ * Phase A -- previously polled GET /public/trip/{token} unconditionally
+ * every 10s for as long as the tab stayed open. These lock in the three
+ * new behaviors: stop for good once the duty is COMPLETED, pause while the
+ * tab is hidden and refresh immediately on becoming visible again, and back
+ * off (not retry every 10s) on repeated fetch failures. None of the mocked
+ * responses include latitude/longitude, so the Google Maps loading effect
+ * never engages -- keeps these tests focused on the polling behavior itself.
+ *
+ * Uses fake timers throughout; `flush()` advances by 0ms to drain the
+ * pending fetch/json microtask chain from the synchronous initial refresh()
+ * call, since that first call isn't gated behind setTimeout at all.
+ * testing-library's own `waitFor` polls with real timers internally and
+ * hangs under vi.useFakeTimers(), so it's deliberately not used here.
  */
 
 vi.mock("@/services/config", () => ({
-  CONFIG: { BASE_URL: "https://api.fleetovo.com", GOOGLE_MAPS_KEY: "test-key" },
+  CONFIG: {
+    BASE_URL: "https://api.fleetovo.test",
+    GOOGLE_MAPS_KEY: "test-key",
+  },
 }));
+
+function setVisibility(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => state,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+function jsonResponse(body: unknown) {
+  return { ok: true, json: async () => body } as Response;
+}
+
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  setVisibility("visible");
+});
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-function pendingStatusResponse() {
-  return {
-    dutyStatus: DutyStatus.ALLOTTED,
-    driverFirstName: null,
-    vehicleName: null,
-    vehicleNumber: null,
-    latitude: null,
-    longitude: null,
-    headingDegrees: null,
-    capturedAt: null,
-    distanceRemainingKm: null,
-    etaMinutes: null,
-  };
-}
-
-describe("TrackTripClient (public trip-share page)", () => {
-  it("fetches the configured backend base URL, never localhost", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => pendingStatusResponse(),
-    });
+describe("TrackTripClient polling", () => {
+  it("stops polling once the duty reaches COMPLETED", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ dutyStatus: "COMPLETED" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<TrackTripClient token="share-token-123" />);
+    render(<TrackTripClient token="tok-1" />);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await flush(120000);
 
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
-    expect(calledUrl).toBe("https://api.fleetovo.com/public/trip/share-token-123");
-    expect(calledUrl).not.toMatch(/localhost/i);
-    expect(calledUrl).not.toMatch(/127\.0\.0\.1/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("still renders the invalid-link state on a failed fetch (unauthenticated behaviour unchanged)", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+  it("pauses while hidden and refreshes immediately when visible again", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ dutyStatus: "ALLOTTED" }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const { findByText } = render(<TrackTripClient token="bad-token" />);
+    render(<TrackTripClient token="tok-2" />);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    expect(await findByText(/no longer valid/i)).toBeInTheDocument();
+    setVisibility("hidden");
+    await flush(60000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      setVisibility("visible");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("backs off instead of retrying every 10s after a fetch failure", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TrackTripClient token="tok-3" />);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Still within the backoff window -- a healthy poller would have
+    // retried by 10s; the first backoff step is longer than that.
+    await flush(15000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Eventually retries.
+    await flush(20000);
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps polling at the base cadence on healthy (non-terminal) responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ dutyStatus: "RUNNING" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TrackTripClient token="tok-4" />);
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await flush(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await flush(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

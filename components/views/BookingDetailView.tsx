@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   BadgeIndianRupee,
   Car,
+  CheckCircle2,
   ChevronLeft,
   Download,
   Link2,
@@ -413,6 +414,15 @@ function DutyDetailCard({
 
         {entry.status === DutyStatus.RUNNING ? (
           <>
+            {entry.arrivedAtPickupAt && (
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-800">
+                <CheckCircle2 size={16} className="shrink-0" />
+                <span>
+                  Your driver has arrived at the pickup point ·{" "}
+                  {instantToReadable(entry.arrivedAtPickupAt)}
+                </span>
+              </div>
+            )}
             <LiveDriverMap dutyId={entry.dutyId} />
             <ShareTripButton dutyId={entry.dutyId} />
           </>

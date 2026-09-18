@@ -116,6 +116,7 @@ export interface ClientBookingEntry {
   reportingTime: string | null;
   startingKM: number | null;
   startAt: string | null;
+  arrivedAtPickupAt: string | null; // set once the driver taps "Arrived at Pickup" in the driver app
 
   dropLocation: string;
   dropTime: string | null;
@@ -189,6 +190,7 @@ export interface PublicTripStatusResponse {
   capturedAt: string | null;
   distanceRemainingKm: number | null;
   etaMinutes: number | null;
+  arrivedAtPickupAt: string | null;
 }
 
 /* =====================================================
