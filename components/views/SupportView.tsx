@@ -5,33 +5,30 @@ import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, MessageCircle, Plus } from "lucide-react";
 
 import { useView } from "./ViewContext";
-import { SupportService } from "@/services/support.service";
-import { SupportTicketResponse, SupportTicketStatus } from "@/types";
+import { useSupportTickets } from "@/hooks/useSupportTickets";
+import { SupportTicketStatus } from "@/types";
 import { instantToReadable } from "@/lib/date";
 import LoadingState from "../ui/LoadingState";
 
 export default function SupportView() {
   const { setView } = useView();
-  const [tickets, setTickets] = useState<SupportTicketResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // P1.3 -- reads from the shared SupportTicketsProvider (see
+  // hooks/useSupportTickets.tsx) instead of its own independent fetch, so
+  // this list and SupportThreadView stay in sync off one array.
+  const { tickets, loading, refresh, createTicket } = useSupportTickets();
+
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTickets = () => {
-    setLoading(true);
-    SupportService.listTickets()
-      .then(setTickets)
-      .catch(() => {
-        // Best-effort -- leave the last known list on screen.
-      })
-      .finally(() => setLoading(false));
-  };
-
   useEffect(() => {
-    loadTickets();
+    // Preserves "always fresh when opening the Support tab" -- same
+    // semantics as the previous per-mount fetch, just against shared state.
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreateTicket = async () => {
@@ -40,8 +37,7 @@ export default function SupportView() {
     try {
       setSubmitting(true);
       setError(null);
-      const ticket = await SupportService.createTicket(subject.trim(), message.trim());
-      setTickets((prev) => [ticket, ...prev]);
+      const ticket = await createTicket(subject.trim(), message.trim());
       setShowNewTicket(false);
       setSubject("");
       setMessage("");

@@ -1,64 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bell, ChevronLeft } from "lucide-react";
 
 import { useView } from "./ViewContext";
-import { NotificationService } from "@/services/notification.service";
+import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationResponse } from "@/types";
 import { instantToReadable } from "@/lib/date";
 import LoadingState from "../ui/LoadingState";
 
-const POLL_MS = 30000;
-
 export default function NotificationsView() {
   const { setView } = useView();
-  const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  // Reads from the shared NotificationsProvider (see hooks/useNotifications.tsx)
+  // instead of running its own poll -- the provider (mounted once in
+  // ClientRoot, alongside Navbar) already owns the recurring 30s fetch.
+  const { notifications, loading, refresh, markRead } = useNotifications();
 
   useEffect(() => {
-    let cancelled = false;
-
-    const refresh = () => {
-      NotificationService.list()
-        .then((res) => {
-          if (!cancelled) setNotifications(res.notifications);
-        })
-        .catch(() => {
-          // Best-effort -- keep the last known list on screen.
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    };
-
+    // Deliberate one-shot refresh so the screen shows the latest data the
+    // moment the client opens it, without starting a second permanent
+    // polling loop -- the shared provider's interval already covers
+    // ongoing freshness.
     refresh();
-    const timer = setInterval(refresh, POLL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleMarkRead = async (notification: NotificationResponse) => {
+  const handleMarkRead = (notification: NotificationResponse) => {
     if (notification.readAt) return;
-
-    // Optimistic update -- the feed shouldn't feel laggy on tap.
-    setNotifications((prev) =>
-      prev.map((n) =>
-        n.id === notification.id
-          ? { ...n, readAt: new Date().toISOString() }
-          : n
-      )
-    );
-
-    try {
-      await NotificationService.markRead(notification.id);
-    } catch {
-      // Best-effort -- next poll will reconcile the true state.
-    }
+    markRead(notification.id);
   };
 
   return (

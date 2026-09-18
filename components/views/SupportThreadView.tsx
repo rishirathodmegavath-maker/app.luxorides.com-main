@@ -5,25 +5,32 @@ import { motion } from "framer-motion";
 import { ChevronLeft, Send } from "lucide-react";
 
 import { useView } from "./ViewContext";
-import { SupportService } from "@/services/support.service";
-import { SupportTicketResponse, SupportTicketStatus } from "@/types";
+import { useSupportTickets } from "@/hooks/useSupportTickets";
+import { SupportTicketStatus } from "@/types";
 import { instantToReadable } from "@/lib/date";
 import LoadingState from "../ui/LoadingState";
 
 export default function SupportThreadView({ ticketId }: { ticketId: string }) {
   const { setView } = useView();
-  const [ticket, setTicket] = useState<SupportTicketResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // P1.3 -- reads the target ticket out of the shared SupportTicketsProvider
+  // list instead of this screen's own GET /client/app/support/tickets fetch.
+  // If the client just came from SupportView (the normal navigation path),
+  // the ticket -- messages included -- is already in `tickets`, so this
+  // renders immediately with no loading flash. refresh() below still runs
+  // once on open for freshness (an agent may have replied since the list
+  // was loaded); there's no backend GET-by-id endpoint to make that check
+  // cheaper than a full-list refetch (see the P1.3 report).
+  const { tickets, loading, refresh, sendMessage } = useSupportTickets();
+  const ticket = tickets.find((t) => t.id === ticketId) ?? null;
+
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    SupportService.listTickets()
-      .then((tickets) => {
-        setTicket(tickets.find((t) => t.id === ticketId) ?? null);
-      })
-      .finally(() => setLoading(false));
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticketId]);
 
   useEffect(() => {
@@ -35,8 +42,7 @@ export default function SupportThreadView({ ticketId }: { ticketId: string }) {
 
     try {
       setSending(true);
-      const updated = await SupportService.sendMessage(ticketId, reply.trim());
-      setTicket(updated);
+      await sendMessage(ticketId, reply.trim());
       setReply("");
     } catch {
       // Best-effort -- leave the draft in the box so the client can retry.
@@ -45,7 +51,7 @@ export default function SupportThreadView({ ticketId }: { ticketId: string }) {
     }
   };
 
-  if (loading) {
+  if (!ticket && loading) {
     return (
       <section className="app-screen">
         <LoadingState label="Loading conversation" className="min-h-[320px]" />

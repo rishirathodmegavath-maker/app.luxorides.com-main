@@ -27,7 +27,10 @@ import { EXPLORE_LOCATIONS } from "@/lib/explore-locations";
 
 import { useCart } from "@/components/fleet/CartContext";
 import { useView } from "@/components/views/ViewContext";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import LoadingState from "../ui/LoadingState";
+
+const SEARCH_DEBOUNCE_MS = 350;
 
 /* ========================================================= */
 
@@ -80,6 +83,14 @@ export default function ExploreView() {
 
   /* ================= FETCH VEHICLES ================= */
 
+  // Phase A: `search` used to sit directly in this effect's dependency
+  // array, so every keystroke fired its own GET .../explorer request.
+  // Debouncing only the search text (not location/brands/categories, which
+  // are discrete selections, not typed input) collapses a typed query down
+  // to ~1 request once the user pauses. The effect's own `cancelled` flag
+  // still protects against an in-flight response overwriting a newer one.
+  const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
+
   useEffect(() => {
     if (!selectedLocation) return;
 
@@ -91,7 +102,7 @@ export default function ExploreView() {
 
         const res = await VehicleCatalogService.explorer({
           location: selectedLocation,
-          searchStr: search || undefined,
+          searchStr: debouncedSearch || undefined,
           brands: selectedBrands.length ? selectedBrands : undefined,
           categories: selectedCategories.length
             ? selectedCategories
@@ -117,7 +128,7 @@ export default function ExploreView() {
     return () => {
       cancelled = true;
     };
-  }, [search, selectedLocation, selectedBrands, selectedCategories]);
+  }, [debouncedSearch, selectedLocation, selectedBrands, selectedCategories]);
 
   /* ================= SORT ================= */
 

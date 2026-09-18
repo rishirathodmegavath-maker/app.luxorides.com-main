@@ -15,40 +15,17 @@ import { AppView, useView } from "@/components/views/ViewContext";
 import SlidingTabBar from "../shared/SlidingTabBar";
 import { motion, useReducedMotion } from "framer-motion";
 import { useCart } from "../fleet/CartContext";
-import { NotificationService } from "@/services/notification.service";
-
-const NOTIFICATION_POLL_MS = 30000;
+import { useNotifications } from "@/hooks/useNotifications";
 
 export default function Navbar() {
   const { totalItems, openCart } = useCart();
-  const { setView, view } = useView();
+  const { setView } = useView();
 
-  // Unread notification count, polled independently of the notifications
-  // view itself so the bell badge stays current no matter which screen
-  // the client is on.
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const refresh = () => {
-      NotificationService.list()
-        .then((res) => {
-          if (!cancelled) setUnreadCount(res.unreadCount);
-        })
-        .catch(() => {
-          // Best-effort -- leave the last known count on screen.
-        });
-    };
-
-    refresh();
-    const timer = setInterval(refresh, NOTIFICATION_POLL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [view.name]);
+  // Unread notification count now comes from the shared NotificationsProvider
+  // (see hooks/useNotifications.tsx) instead of Navbar running its own poll --
+  // that poll used to also restart on every `view.name` change, firing an
+  // extra fetch on every tab switch.
+  const { unreadCount } = useNotifications();
 
   // minimize state for desktop dock
   const [isMinimized, setIsMinimized] = useState(false);

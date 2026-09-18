@@ -7,8 +7,36 @@ import { ClientPaymentService } from "@/services/client-payment.service";
 import {
   PaymentGateway,
   PaymentOrderResponse,
+  VerifyPaymentRequest,
 } from "@/types/payment";
 
+const VERIFY_RETRY_DELAYS_MS = [1000, 2000];
+
+/*
+ * verifyPayment is a locked, idempotent no-op on the backend once a payment
+ * is CONFIRMED (see RazorpayPaymentService.verifyPayment) -- calling it more
+ * than once for the same order/payment id is always safe, so retrying a
+ * failed call here just recovers from a dropped network request/backend
+ * blip right after Razorpay has already captured the money. It never risks
+ * a duplicate charge either way.
+ */
+async function verifyWithRetry(payload: VerifyPaymentRequest): Promise<{ status: string }> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= VERIFY_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await ClientPaymentService.verify(payload);
+    } catch (err) {
+      lastError = err;
+      const delay = VERIFY_RETRY_DELAYS_MS[attempt];
+      if (delay !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw lastError;
+}
 
 export default function PaymentView({ bookingId }: { bookingId: string }) {
   const { setView } = useView();
@@ -62,8 +90,18 @@ export default function PaymentView({ bookingId }: { bookingId: string }) {
         prefill: payload.prefill ?? {},
 
         handler: async (response) => {
+          // Razorpay has already captured the money by the time this fires --
+          // the only thing that can still fail is *telling our backend*
+          // (a dropped network request, a brief backend blip). verifyPayment
+          // is safe to call more than once for the same orderId/paymentId
+          // (it's a locked, idempotent no-op once CONFIRMED -- see
+          // RazorpayPaymentService.verifyPayment), so a few quick retries
+          // here recover the common "flaky network right after payment"
+          // case without any new backend capability. If all retries fail,
+          // there's still no duplicate-charge risk -- only a booking that
+          // needs the customer/ops to notice it didn't confirm.
           try {
-            await ClientPaymentService.verify({
+            await verifyWithRetry({
               bookingId,
               gateway: PaymentGateway.RAZORPAY,
               orderId: response.razorpay_order_id,
@@ -71,7 +109,7 @@ export default function PaymentView({ bookingId }: { bookingId: string }) {
               signature: response.razorpay_signature,
             });
           } catch (err) {
-            console.error("Payment verification failed", err);
+            console.error("Payment verification failed after retries", err);
           } finally {
             redirectToBooking();
           }

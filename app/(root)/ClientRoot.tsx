@@ -9,6 +9,8 @@ import CartDrawer from "@/components/fleet/CartDrawer";
 import { CartProvider } from "@/components/fleet/CartContext";
 import { ViewProvider } from "@/components/views/ViewContext";
 import AuthGate from "@/components/auth/AuthGate";
+import { NotificationsProvider } from "@/hooks/useNotifications";
+import { SupportTicketsProvider } from "@/hooks/useSupportTickets";
 
 export default function ClientRoot({
   children,
@@ -19,7 +21,11 @@ export default function ClientRoot({
     <AuthGate>
       <CartProvider>
         <ViewProvider>
-          <Shell>{children}</Shell>
+          <NotificationsProvider>
+            <SupportTicketsProvider>
+              <Shell>{children}</Shell>
+            </SupportTicketsProvider>
+          </NotificationsProvider>
         </ViewProvider>
       </CartProvider>
     </AuthGate>

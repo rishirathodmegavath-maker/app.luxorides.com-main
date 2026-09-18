@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { ChevronLeft, Plus, Trash } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { useView } from "./ViewContext";
 import { useClientAuth } from "@/components/auth/ClientAuthContext";
@@ -15,52 +15,72 @@ export default function BillingEntityView() {
   const { setView } = useView();
   const { client, setClient } = useClientAuth();
 
-  const [entities, setEntities] = useState<ClientBillingEntity[]>([]);
   const [adding, setAdding] = useState(false);
   const [gstin, setGstin] = useState("");
   const [lookupResult, setLookupResult] =
     useState<ClientBillingEntity | null>(null);
   const [deleteTarget, setDeleteTarget] =
     useState<ClientBillingEntity | null>(null);
-
-  /* ================= LOAD ================= */
-
-  useEffect(() => {
-    ClientBillingEntityService.list().then(setEntities);
-  }, []);
+  /*
+   * P1.8 -- handleLookup/handleAttach/handleDetach had no in-flight guard, so
+   * a fast double-click on "Fetch Details"/"Attach to Account"/"Detach" fired
+   * duplicate requests. Lookup and attach never overlap in time with detach
+   * (different view states -- adding vs. the list), so one shared flag is
+   * enough, same pattern as the chauffeur app's Button.tsx isDisabled.
+   */
+  const [submitting, setSubmitting] = useState(false);
 
   if (!client) return null;
+
+  /*
+   * P1.3 -- entities come straight from ClientAuthContext (see
+   * BillingEntitySelector for the same reasoning) instead of this view's
+   * own GET /client/app/billing-entities fetch on mount.
+   */
+  const entities = client.clientBillingEntity ?? [];
 
   /* ================= HANDLERS ================= */
 
   const handleLookup = async () => {
-    const res = await ClientBillingEntityService.getByGstin(gstin);
-    setLookupResult(res);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await ClientBillingEntityService.getByGstin(gstin);
+      setLookupResult(res);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleAttach = async () => {
-    if (!lookupResult) return;
+    if (submitting || !lookupResult) return;
+    setSubmitting(true);
+    try {
+      const updatedClient =
+        await ClientBillingEntityService.attach(lookupResult.id);
 
-    const updatedClient =
-      await ClientBillingEntityService.attach(lookupResult.id);
+      setClient(updatedClient);
 
-    setClient(updatedClient);
-    setEntities(updatedClient.clientBillingEntity || []);
-
-    setLookupResult(null);
-    setGstin("");
-    setAdding(false);
+      setLookupResult(null);
+      setGstin("");
+      setAdding(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDetach = async () => {
-    if (!deleteTarget) return;
+    if (submitting || !deleteTarget) return;
+    setSubmitting(true);
+    try {
+      const updatedClient =
+        await ClientBillingEntityService.detach(deleteTarget.id);
 
-    const updatedClient =
-      await ClientBillingEntityService.detach(deleteTarget.id);
-
-    setClient(updatedClient);
-    setEntities(updatedClient.clientBillingEntity || []);
-    setDeleteTarget(null);
+      setClient(updatedClient);
+      setDeleteTarget(null);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* ================= UI ================= */
@@ -109,7 +129,8 @@ export default function BillingEntityView() {
           {!lookupResult && (
             <button
               onClick={handleLookup}
-              className="w-full rounded-full bg-white py-3 text-sm font-semibold text-black hover:bg-white/85"
+              disabled={submitting}
+              className="w-full rounded-full bg-white py-3 text-sm font-semibold text-black hover:bg-white/85 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Fetch Details
             </button>
@@ -125,7 +146,8 @@ export default function BillingEntityView() {
 
               <button
                 onClick={handleAttach}
-                className="mt-2 w-full rounded-full bg-white py-3 text-sm font-semibold text-black hover:bg-white/85"
+                disabled={submitting}
+                className="mt-2 w-full rounded-full bg-white py-3 text-sm font-semibold text-black hover:bg-white/85 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Attach to Account
               </button>
@@ -191,6 +213,7 @@ export default function BillingEntityView() {
         } from your profile.`}
         confirmText="Detach"
         danger
+        confirmDisabled={submitting}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDetach}
       />

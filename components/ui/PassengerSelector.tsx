@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Users, X } from "lucide-react";
 
-import { Passenger } from "@/types";
 import { PassengerService } from "@/services/passenger.service";
 import { displayName } from "@/lib/utils";
 import { useClientAuth } from "../auth/ClientAuthContext";
 import PassengerForm from "../client/PassengerForm";
+import type { Passenger } from "@/types";
 
 type Props = {
   value: string[];
@@ -21,21 +21,23 @@ export default function PassengerSelector({
   onChange,
   placeholder = "Add passengers",
 }: Props) {
-  const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { setClient } = useClientAuth();
+  const { client, setClient } = useClientAuth();
 
-  /* ================= LOAD ================= */
-
-  useEffect(() => {
-    PassengerService.list()
-      .then(setPassengers)
-      .finally(() => setLoading(false));
-  }, []);
+  /*
+   * P1.3 -- passengers now come straight from ClientAuthContext instead of
+   * this component's own GET /client/app/passengers fetch. The backend
+   * endpoint (PassengerController.list) literally returns
+   * client.getPassengers() -- the exact same field already loaded into
+   * `client` at login and kept in sync by every add/update/delete mutation
+   * (see PassengerView, and addNewPassenger below) -- so the independent
+   * fetch was downloading data already sitting in context, with no
+   * different filter/pagination/freshness semantics of its own.
+   */
+  const passengers = useMemo(() => client?.passengers ?? [], [client]);
 
   /* ================= DERIVED ================= */
 
@@ -101,7 +103,6 @@ export default function PassengerSelector({
 
       setClient(updatedClient);
       const refreshedPassengers = updatedClient.passengers ?? [];
-      setPassengers(refreshedPassengers);
 
       const created = refreshedPassengers.find(
         (p) =>
@@ -260,7 +261,7 @@ export default function PassengerSelector({
       </div>
 
       {/* ================= DROPDOWN ================= */}
-      {(query || (!loading && passengers.length === 0)) && (
+      {(query || passengers.length === 0) && (
         <div
           className="
             relative z-20
@@ -271,13 +272,7 @@ export default function PassengerSelector({
             shadow-lg
           "
         >
-          {loading && (
-            <div className="px-4 py-3 text-sm text-neutral-500">
-              Loading passengers…
-            </div>
-          )}
-
-          {!adding && !loading && filteredPassengers.length === 0 && (
+          {!adding && filteredPassengers.length === 0 && (
             <div className="space-y-3 px-4 py-4">
               <p className="text-sm text-neutral-500">
                 {passengers.length === 0

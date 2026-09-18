@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { ChevronLeft, Plus, Pencil, Trash } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { useView } from "./ViewContext";
 import { useClientAuth } from "@/components/auth/ClientAuthContext";
@@ -50,19 +51,31 @@ export default function PassengerView() {
 
   /* ================= DELETE ================= */
 
+  // Phase A: previously re-fetched the full passenger list after every
+  // delete (GET /client/app/passengers). The DELETE response already
+  // implies the correct resulting list -- a local filter, same pattern
+  // handleAdd/handleUpdate already use with their own response -- gets the
+  // same result without the extra round trip. The try/catch (matching
+  // BookingDetailView's handleConfirmCancel) exists because onConfirm is
+  // invoked from a plain onClick, which doesn't await -- without it, a
+  // failed delete() was an unhandled promise rejection with no feedback,
+  // even though the passenger correctly stayed in place either way.
   const confirmDelete = async () => {
     if (!deleteTarget) return;
 
-    await PassengerService.delete(deleteTarget.id);
+    try {
+      await PassengerService.delete(deleteTarget.id);
 
-    const refreshedPassengers = await PassengerService.list();
+      setClient({
+        ...client,
+        passengers: passengers.filter((p) => p.id !== deleteTarget.id),
+      });
 
-    setClient({
-      ...client,
-      passengers: refreshedPassengers,
-    });
-
-    setDeleteTarget(null);
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Failed to delete passenger", err);
+      toast.error("Couldn't remove passenger. Please try again.");
+    }
   };
 
   return (

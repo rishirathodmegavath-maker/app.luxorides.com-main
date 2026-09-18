@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Building2, X } from "lucide-react";
 
-import { ClientBillingEntity } from "@/types";
-import { ClientBillingEntityService } from "@/services/client-billing-entity.service";
 import { displayAddress } from "@/lib/utils";
+import { useClientAuth } from "../auth/ClientAuthContext";
+import type { ClientBillingEntity } from "@/types";
 
 type Props = {
   value?: string;
@@ -18,17 +18,20 @@ export default function BillingEntitySelector({
   onChange,
   placeholder = "Select corporate account",
 }: Props) {
-  const [entities, setEntities] = useState<ClientBillingEntity[]>([]);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { client } = useClientAuth();
 
-  /* ================= LOAD ================= */
-
-  useEffect(() => {
-    ClientBillingEntityService.list()
-      .then(setEntities)
-      .finally(() => setLoading(false));
-  }, []);
+  /*
+   * P1.3 -- corporate billing entities now come straight from
+   * ClientAuthContext instead of this component's own
+   * GET /client/app/billing-entities fetch. The backend endpoint
+   * (BillingEntityController.list) literally returns
+   * client.getClientBillingEntity() -- the exact same field already
+   * loaded into `client` at login and kept in sync by attach/detach (see
+   * BillingEntityView) -- so the independent fetch was downloading data
+   * already sitting in context.
+   */
+  const entities = useMemo(() => client?.clientBillingEntity ?? [], [client]);
 
   /* ================= DERIVED ================= */
 
@@ -137,13 +140,7 @@ export default function BillingEntitySelector({
             shadow-lg
           "
         >
-          {loading && (
-            <div className="px-4 py-3 text-sm text-neutral-500">
-              Loading corporate accounts…
-            </div>
-          )}
-
-          {!loading && filteredEntities.length === 0 && (
+          {filteredEntities.length === 0 && (
             <div className="px-4 py-3 text-sm text-neutral-500">
               No matching accounts
             </div>
