@@ -15,7 +15,7 @@ Copy `.env.example` to `.env.local` and fill in real values (see the comments in
 cp .env.example .env.local
 ```
 
-At minimum for local development against a backend running on `localhost:8443`, `.env.local` can be left empty -- `NEXT_PUBLIC_API_BASE_URL` defaults to `http://localhost:8443` in dev, and `NEXT_PUBLIC_GOOGLE_MAPS_KEY` falls back to a shared key with a console warning. Set both explicitly for anything beyond local development; production builds refuse to start without `NEXT_PUBLIC_API_BASE_URL` set.
+At minimum for local development against a backend running on `localhost:8443`, `.env.local` can be left empty -- `NEXT_PUBLIC_API_BASE_URL` defaults to `http://localhost:8443` in dev. `NEXT_PUBLIC_GOOGLE_MAPS_KEY` has no fallback (a real key can't be hardcoded in source -- see the comment in `services/config.ts`); without it, dev logs a console warning and map-dependent UI (`LiveDriverMap`, `LocationInput`, trip tracking) just won't load a map. Set both explicitly for anything beyond local development; production builds refuse to start without either set.
 
 ```bash
 npm install

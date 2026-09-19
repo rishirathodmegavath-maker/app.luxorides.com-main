@@ -41,8 +41,13 @@ function resolveBaseUrl(): string {
 // browser-exposed by design either way (Google's actual protection for
 // this key is HTTP-referrer + API restriction in Cloud Console, not
 // secrecy), but a hardcoded value still can't be rotated without a code
-// change and shouldn't live in source. Same fail-loudly pattern as
-// BASE_URL above: no fallback key, ever.
+// change and shouldn't live in source, so there's no fallback key anymore.
+// Production still fails loudly (same pattern as BASE_URL above) since a
+// real, restricted key is a hard requirement there. Local dev only warns
+// and returns "" -- CONFIG is evaluated eagerly and imported from shared
+// modules used well outside the map components, so throwing here would
+// crash the whole app locally instead of just degrading the map loader
+// (loadGoogleMaps callers in LiveDriverMap/LocationInput/TrackTripClient).
 function resolveGoogleMapsKey(): string {
   const configured = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY?.trim();
   if (configured) {
@@ -57,10 +62,11 @@ function resolveGoogleMapsKey(): string {
     );
   }
 
-  throw new Error(
-    "NEXT_PUBLIC_GOOGLE_MAPS_KEY is not set. Set it in .env.local " +
-      "(see .env.example)."
+  console.warn(
+    "NEXT_PUBLIC_GOOGLE_MAPS_KEY is not set -- maps will not load. Set it " +
+      "in .env.local (see .env.example)."
   );
+  return "";
 }
 
 export const CONFIG = {
